@@ -60,15 +60,8 @@ paGrXs = V.fromList . map pvGr
 paGr2Xs :: [PaVals] -> V.Vector Double
 paGr2Xs = V.mapVector (\x -> x^2) . paGrXs
 
-grData :: [PaVals] -> (V.Vector Double, [FormattedSeries])
-grData pvs = (xs,[point ys Cross, line ((\x -> alpha + beta * x) :: Function) (1.0 :: LineWidth)])
-    where
-        ys = V.fromList . map pvPa $ pvs
-        xs = paGrXs pvs
-        (alpha,beta,r2) = linearRegressionRSqr (U.fromList . V.toList $ xs :: Sample) (U.fromList . V.toList $ ys :: Sample)
-
-series :: V.Vector Double -> V.Vector Double -> [FormattedSeries]
-series xs ys = [point ys Cross, line ((\x -> alpha + beta * x) :: Function) (1.0 :: LineWidth)]
+series :: V.Vector Double -> V.Vector Double -> (Double,[FormattedSeries])
+series xs ys = (r2,[point ys Cross, line ((\x -> alpha + beta * x) :: Function) (1.0 :: LineWidth)])
     where
         (alpha,beta,r2) = linearRegressionRSqr (U.fromList . V.toList $ xs :: Sample) (U.fromList . V.toList $ ys :: Sample)
 
@@ -91,16 +84,16 @@ makeFigure (t,pvs) = do
             withAxisLine $ do
                 setLineWidth 1.0
     withPlot (1,1) $ do
-        withHeading . setText $ "left"
         let xs = paGrXs pvs
-        setDataset (xs, series xs vys)
+        withHeading . setText $ ("R^2=" ++ (show . fst . series xs $ vys))
+        setDataset (xs, snd . series xs $ vys)
         setRange XAxis Lower Linear 0 . maximum . V.toList $ xs
         withAxis XAxis (Side Lower) $ do
             withAxisLabel . setText $ "GR"
     withPlot (1,2) $ do
-        withHeading . setText $ "right"
         let xs = paGr2Xs pvs
-        setDataset (xs, series xs vys)
+        withHeading . setText $ ("R^2=" ++ (show . fst . series xs $ vys))
+        setDataset (xs, snd . series xs $ vys)
         setRange XAxis Lower Linear 0 . maximum .  V.toList $ xs
         withAxis XAxis (Side Lower) $ do
             withAxisLabel . setText $ "GR^2"
