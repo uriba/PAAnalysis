@@ -1,5 +1,6 @@
 import Text.TSV
 import Text.CSV
+import Safe (readMay, atMay, headMay)
 import Data.Either (either)
 import qualified Data.Map as M
 import Data.List (foldl', isInfixOf)
@@ -10,6 +11,8 @@ import Statistics.LinearRegression
 import Statistics.Types
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector.Unboxed.Base as B
+import Data.Maybe (maybeToList, catMaybes)
+import Control.Monad ((<=<))
 
 data RawPaMeasurement = RawPaMeasurement {
     pname :: String,
@@ -22,31 +25,35 @@ data PaVals = PaVals {
     pvMed :: String,
     pvGr :: Double,
     pvPa :: Double
-    }
+    } deriving Show
 
 loadPaData :: [[String]] -> [RawPaMeasurement]
-loadPaData = tail . map loadPaEntry
+loadPaData = tail . catMaybes . map loadPaEntry
 
 loadClusters :: [[String]] -> [(String,Int)]
 loadClusters = map (\s -> (head s, read . last $ s))
 
-loadPaEntry :: [String] -> RawPaMeasurement
-loadPaEntry line = RawPaMeasurement {
-    pname = head line,
-    mTime = read $ line !! 4,
-    doublingTime = read $ line !! 9,
-    pA = read $ line !! 10
-}
+loadPaEntry :: [String] -> Maybe RawPaMeasurement
+loadPaEntry line = do
+    name <- headMay line
+    time <- readMay <=< atMay line $ 4
+    dt <- readMay <=< atMay line $ 9
+    pa <- readMay <=< atMay line $ 10
+    return RawPaMeasurement { pname = name, mTime = time, doublingTime = dt, pA = pa }
 
 paID :: RawPaMeasurement -> String
 paID = head . tail . splitOn "__" . takeWhile (/= ';') . pname
 
-paVals :: RawPaMeasurement -> PaVals
-paVals rpm = PaVals {
-    pvMed = med . pname $ rpm,
-    pvGr = 1/(doublingTime rpm/3600),
-    pvPa = pA rpm
-    }
+paVals :: RawPaMeasurement -> Maybe PaVals
+paVals rpm 
+    | isNaN (doublingTime rpm) || doublingTime rpm < 0 = Nothing
+    | isNaN (pA rpm) || pA rpm < 0 = Nothing
+    | 'Y' /= (head . paID $ rpm) = Nothing
+    | otherwise = Just PaVals {
+        pvMed = med . pname $ rpm,
+        pvGr = 1/(doublingTime rpm/3600),
+        pvPa = pA rpm
+        }
 
 med :: String -> String
 med = last . splitOn "__"
@@ -98,6 +105,10 @@ makeFigure (t,pvs) = do
         withAxis XAxis (Side Lower) $ do
             withAxisLabel . setText $ "GR^2"
 
+makeFigureFile :: (String,[PaVals]) -> IO ()
+makeFigureFile (name,vals) = do
+    putStrLn $ "processing " ++ name
+    writeFigure PNG ("output/" ++ name ++ ".png") (1000,500) . makeFigure $ (name,vals)
 
 main = do
     original_pa <- parseTSVFromFile pa_filename
@@ -105,13 +116,10 @@ main = do
     let original_pa_data =  either (error "failed to load pa file") loadPaData $ original_pa
     let clusters_data = either (error "failed to load clusters file") loadClusters $ clusters
     let no_hs = filter (not . isInfixOf "HS" . pname) . filter (isInfixOf "__" . pname) $ original_pa_data
-    let pMap = foldl' (\m pa -> M.insertWith (++) (paID pa) (return $ paVals pa) m) M.empty no_hs
-    putStrLn "first keys are:"
-    mapM_ (putStrLn) . take 20 . M.keys $ pMap
-    putStrLn "first clusters are:"
-    mapM_ (putStrLn . show) . take 20 $ clusters_data
+    let pMap = M.filter (not . null) $ foldl' (\m pa -> M.insertWith (++) (paID pa) (maybeToList $ paVals pa) m) M.empty no_hs
+    putStrLn "processing pa file..."
+    putStrLn "processing clusters file..."
+    putStrLn "total promoters loaded:"
     putStrLn . show . length . M.keys $ pMap
-    writeFigure PNG "test1.png" (1000,500) . makeFigure . head . drop 5 . M.toList $ pMap
-    writeFigure PNG "test2.png" (1000,500) . makeFigure . head . drop 6 . M.toList $ pMap
-    writeFigure PNG "test3.png" (1000,500) . makeFigure . head . drop 7 . M.toList $ pMap
+    mapM_ makeFigureFile . M.toList $ pMap
 
