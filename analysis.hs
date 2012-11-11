@@ -3,7 +3,7 @@ import Text.CSV
 import Safe (readMay, atMay, headMay)
 import Data.Either (either)
 import qualified Data.Map as M
-import Data.List (foldl', isInfixOf, sortBy, group)
+import Data.List (foldl', isInfixOf, sortBy, group, nub, genericLength)
 import Data.List.Split
 import qualified Data.Packed.Vector as V
 import Graphics.Rendering.Plot
@@ -130,6 +130,38 @@ makeFigureFile (name,vals) = do
     putStrLn $ "processing " ++ name
     writeFigure PNG ("output/" ++ name ++ ".png") (1000,500) . makeFigure $ (name,vals)
 
+makeCDSeries :: [CalibData] -> [PaVals] -> String -> (Series,Series)
+makeCDSeries cd pv m = (V.fromList times, V.fromList . map scale $ times)
+    where
+        rpv = filter (\x -> pvMed x == m) pv
+        rcd = filter (\x -> cdMed x == m) cd
+        times = nub . map (fromIntegral . pvTime) $ rpv
+        mes_t t = filter (\x -> (fromIntegral . pvTime $ x) == t) $ rpv
+        scale t = ((sum . map (\x -> pvPa x / ((pvGr x)^2)) $ mes_t t)/ (genericLength . mes_t $ t) )/avg_calib_pa
+        avg_calib_pa = (sum . map (\x -> cdPa x / (cdGr x ^ 2)) $ rcd) / genericLength rcd
+
+normalizationData :: [CalibData] -> [PaVals] -> Figure ()
+normalizationData cd pv = do
+    withTitle . setText $ "Normalization data"
+    setPlots 1 1
+    let media = nub . map cdMed $ cd
+    let calib_series = map (makeCDSeries cd pv) $ media
+    let dataset = map (\(a,b) -> (Point,a,b)) calib_series
+    withPlot (1,1) $ do
+        addAxis XAxis (Side Lower) $ do
+            setTicks Minor (Left 5)
+            withAxisLine $ do
+                setLineWidth 1.0
+        addAxis YAxis (Side Lower) $ do
+            setTicks Minor (Left 5)
+            withAxisLabel . setText $ "relativePA"
+            withAxisLine $ do
+                setLineWidth 1.0
+        setDataset dataset
+        setRangeFromData XAxis Lower Linear
+        setRangeFromData YAxis Lower Linear
+    
+
 main = do
     original_pa <- parseTSVFromFile pa_filename
     clusters <- parseCSVFromFile clusters_filename
@@ -144,5 +176,7 @@ main = do
     putStrLn "total promoters loaded:"
     putStrLn . show . length . M.keys $ pMap
     mapM_ (putStrLn . show) $ calib_data
+
+    writeFigure PNG ("normalization.png") (800,800) . normalizationData calib_data $ pMap M.! calib_gene
     -- mapM_ makeFigureFile . M.toList $ pMap
 
