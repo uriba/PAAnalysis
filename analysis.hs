@@ -3,7 +3,7 @@ import Text.CSV
 import Safe (readMay, atMay, headMay)
 import Data.Either (either)
 import qualified Data.Map as M
-import Data.List (foldl', isInfixOf)
+import Data.List (foldl', isInfixOf, sortBy, group)
 import Data.List.Split
 import qualified Data.Packed.Vector as V
 import Graphics.Rendering.Plot
@@ -13,6 +13,7 @@ import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector.Unboxed.Base as B
 import Data.Maybe (maybeToList, catMaybes)
 import Control.Monad ((<=<))
+import Data.Function (on)
 
 data RawPaMeasurement = RawPaMeasurement {
     pname :: String,
@@ -22,16 +23,32 @@ data RawPaMeasurement = RawPaMeasurement {
     } deriving Show
 
 data PaVals = PaVals {
+    pvTime :: Integer,
     pvMed :: String,
     pvGr :: Double,
     pvPa :: Double
-    } deriving Show
+    } deriving (Show, Eq)
+
+data CalibData = CalibData {
+    cdMed :: String,
+    cdGr :: Double,
+    cdPa :: Double
+    } deriving (Show,Eq)
 
 loadPaData :: [[String]] -> [RawPaMeasurement]
 loadPaData = tail . catMaybes . map loadPaEntry
 
 loadClusters :: [[String]] -> [(String,Int)]
 loadClusters = map (\s -> (head s, read . last $ s))
+
+loadCalibData :: [[String]] -> [CalibData]
+loadCalibData = map lcd
+    where
+        lcd line = CalibData {
+            cdMed = med . head $ line,
+            cdGr = 3600/(read . last $ line),
+            cdPa = read (line !! 1)
+    }
 
 loadPaEntry :: [String] -> Maybe RawPaMeasurement
 loadPaEntry line = do
@@ -50,16 +67,19 @@ paVals rpm
     | isNaN (pA rpm) || pA rpm < 0 = Nothing
     | 'Y' /= (head . paID $ rpm) = Nothing
     | otherwise = Just PaVals {
+        pvTime = mTime rpm,
         pvMed = med . pname $ rpm,
-        pvGr = 1/(doublingTime rpm/3600),
+        pvGr = 3600/doublingTime rpm,
         pvPa = pA rpm
         }
 
 med :: String -> String
-med = last . splitOn "__"
+med = takeWhile (/= ';') . last . splitOn "__"
 
 pa_filename = "DATE_GR_PA_PAnewWindow.tab"
 clusters_filename = "Clusters.csv"
+calib_filename = "calib_data.csv"
+calib_gene = "YOR063W"
 
 paGrXs :: [PaVals] -> V.Vector Double
 paGrXs = V.fromList . map pvGr
@@ -113,13 +133,16 @@ makeFigureFile (name,vals) = do
 main = do
     original_pa <- parseTSVFromFile pa_filename
     clusters <- parseCSVFromFile clusters_filename
+    calib <- parseCSVFromFile calib_filename
     let original_pa_data =  either (error "failed to load pa file") loadPaData $ original_pa
     let clusters_data = either (error "failed to load clusters file") loadClusters $ clusters
+    let calib_data = either (error "failed to load calibration data") (loadCalibData  . init) $ calib
     let no_hs = filter (not . isInfixOf "HS" . pname) . filter (isInfixOf "__" . pname) $ original_pa_data
     let pMap = M.filter (not . null) $ foldl' (\m pa -> M.insertWith (++) (paID pa) (maybeToList $ paVals pa) m) M.empty no_hs
     putStrLn "processing pa file..."
     putStrLn "processing clusters file..."
     putStrLn "total promoters loaded:"
     putStrLn . show . length . M.keys $ pMap
-    mapM_ makeFigureFile . M.toList $ pMap
+    mapM_ (putStrLn . show) $ calib_data
+    -- mapM_ makeFigureFile . M.toList $ pMap
 
