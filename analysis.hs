@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 import Text.TSV
 import Text.CSV
 import Safe (readMay, atMay, headMay)
@@ -14,6 +15,15 @@ import qualified Data.Vector.Unboxed.Base as B
 import Data.Maybe (maybeToList, catMaybes)
 import Control.Monad ((<=<))
 import Data.Function (on)
+import qualified Data.Foldable as F
+
+mean :: (F.Foldable t) => t Double -> Double
+mean = fini . F.foldl' go (0, 0)
+  where
+    fini (a, _) = a
+    go (m, n) x = (m', n')
+        where m' = m + (x - m) / fromIntegral n'
+              n' = n + 1
 
 data RawPaMeasurement = RawPaMeasurement {
     pname :: String,
@@ -137,8 +147,8 @@ makeCDSeries cd pv m = (V.fromList times, V.fromList . map scale $ times)
         rcd = filter (\x -> cdMed x == m) cd
         times = nub . map (fromIntegral . pvTime) $ rpv
         mes_t t = filter (\x -> (fromIntegral . pvTime $ x) == t) $ rpv
-        scale t = ((sum . map (\x -> pvPa x / ((pvGr x)^2)) $ mes_t t)/ (genericLength . mes_t $ t) )/avg_calib_pa
-        avg_calib_pa = (sum . map (\x -> cdPa x / (cdGr x ^ 2)) $ rcd) / genericLength rcd
+        scale t = (mean . map (\x -> pvPa x / ((pvGr x)^2)) $ mes_t t)/avg_calib_pa
+        avg_calib_pa = mean . map (\x -> cdPa x / (cdGr x ^ 2)) $ rcd
 
 normalizationData :: [CalibData] -> [PaVals] -> Figure ()
 normalizationData cd pv = do
@@ -178,5 +188,5 @@ main = do
     mapM_ (putStrLn . show) $ calib_data
 
     writeFigure PNG ("normalization.png") (800,800) . normalizationData calib_data $ pMap M.! calib_gene
-    -- mapM_ makeFigureFile . M.toList $ pMap
+    mapM_ makeFigureFile . M.toList $ pMap
 
