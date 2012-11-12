@@ -170,6 +170,7 @@ normalizationData cd pv = do
         setDataset dataset
         setRangeFromData XAxis Lower Linear
         setRangeFromData YAxis Lower Linear
+        setLegend True NorthEast Inside
     
 
 main = do
