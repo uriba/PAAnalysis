@@ -4,7 +4,7 @@ import Text.CSV
 import Safe (readMay, atMay, headMay)
 import Data.Either (either)
 import qualified Data.Map as M
-import Data.List (foldl', isInfixOf, sortBy, group, nub, genericLength)
+import Data.List (foldl', isInfixOf, sortBy, group, nub, genericLength, deleteFirstsBy)
 import Data.List.Split
 import qualified Data.Packed.Vector as V
 import Graphics.Rendering.Plot
@@ -87,6 +87,7 @@ med :: String -> String
 med = takeWhile (/= ';') . last . splitOn "__"
 
 pa_filename = "DATE_GR_PA_PAnewWindow.tab"
+outliers_filename = "plate_detected_outliers.tab"
 clusters_filename = "Clusters.csv"
 calib_filename = "calib_data.csv"
 calib_gene = "YOR063W"
@@ -172,15 +173,17 @@ normalizationData cd pv = do
         setRangeFromData YAxis Lower Linear
         setLegend True NorthEast Inside
     
-
 main = do
     original_pa <- parseTSVFromFile pa_filename
+    original_outliers <- parseTSVFromFile outliers_filename
     clusters <- parseCSVFromFile clusters_filename
     calib <- parseCSVFromFile calib_filename
-    let original_pa_data =  either (error "failed to load pa file") loadPaData $ original_pa
+    let original_pa_data =  either (error "failed to load pa file") id $ original_pa :: [[String]]
+    let outliers_data =  either (error "failed to load outliers file") id $ original_outliers :: [[String]]
+    let relevant_pa = loadPaData . deleteFirstsBy (\a b -> head a == head b) original_pa_data $ outliers_data
     let clusters_data = either (error "failed to load clusters file") loadClusters $ clusters
     let calib_data = either (error "failed to load calibration data") (loadCalibData  . init) $ calib
-    let no_hs = filter (not . isInfixOf "HS" . pname) . filter (isInfixOf "__" . pname) $ original_pa_data
+    let no_hs = filter (not . isInfixOf "HS" . pname) . filter (isInfixOf "__" . pname) $ relevant_pa 
     let pMap = M.filter (not . null) $ foldl' (\m pa -> M.insertWith (++) (paID pa) (maybeToList $ paVals pa) m) M.empty no_hs
     putStrLn "processing pa file..."
     putStrLn "processing clusters file..."
