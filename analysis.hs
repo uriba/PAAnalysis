@@ -100,13 +100,11 @@ paGr2Xs = V.mapVector (\x -> x^2) . paGrXs
 
 series :: V.Vector Double -> V.Vector Double -> (Double,[FormattedSeries])
 series xs ys = (r2,[ point ys Cross,
-                     line ((\x -> alpha + beta * x) :: Function) (1.0 :: LineWidth),
-                     line ((\x -> alpha2 + beta2 * x) :: Function) ( 1.0 :: LineWidth),
-                     line ((\x -> alpha3 + beta3 * x) :: Function) ( 1.0 :: LineWidth)
+                     line ((\x -> alpha1 + beta1 * x) :: Function) ( 1.0 :: LineWidth)
                      ])
     where
         (alpha,beta,r2) = linearRegressionRSqr (U.fromList . V.toList $ xs :: Sample) (U.fromList . V.toList $ ys :: Sample)
-        (alpha2,beta2,alpha3, beta3) = linearRegressionTLS (U.fromList . V.toList $ xs :: Sample) (U.fromList . V.toList $ ys :: Sample)
+        (alpha1,beta1) = linearRegressionTLS (U.fromList . V.toList $ xs :: Sample) (U.fromList . V.toList $ ys :: Sample)
 
 makeFigure :: (String,[PaVals]) -> Figure ()
 makeFigure (t,pvs) = do
