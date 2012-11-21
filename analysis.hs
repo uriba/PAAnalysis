@@ -9,6 +9,7 @@ import Data.List.Split
 import qualified Data.Packed.Vector as V
 import Graphics.Rendering.Plot
 import Statistics.LinearRegression
+import qualified Statistics.Sample as S
 import Statistics.Types
 import qualified Data.Vector.Unboxed as U
 import qualified Data.Vector.Unboxed.Base as B
@@ -100,11 +101,14 @@ paGr2Xs = V.mapVector (\x -> x^2) . paGrXs
 
 series :: V.Vector Double -> V.Vector Double -> (Double,[FormattedSeries])
 series xs ys = (r2,[ point ys Cross,
-                     line ((\x -> alpha1 + beta1 * x) :: Function) ( 1.0 :: LineWidth)
+                     line ((\x -> alpha1 + beta1 * x) :: Function) ( 1.0 :: LineWidth),
+                     line ((\x -> beta * x) :: Function) ( 1.0 :: LineWidth)
                      ])
     where
-        (alpha,beta,r2) = linearRegressionRSqr (U.fromList . V.toList $ xs :: Sample) (U.fromList . V.toList $ ys :: Sample)
-        (alpha1,beta1) = linearRegressionTLS (U.fromList . V.toList $ xs :: Sample) (U.fromList . V.toList $ ys :: Sample)
+        (alpha1,beta1) = linearRegressionTLS (fl xs) (fl ys)
+        fl x = U.fromList . V.toList $ x :: Sample
+        r2 = (correl  (fl xs) (fl ys)) ^ 2
+        beta = linearRegressionTLS00 (U.fromList . V.toList $ xs :: Sample) (U.fromList . V.toList $ ys :: Sample)
 
 makeFigure :: (String,[PaVals]) -> Figure ()
 makeFigure (t,pvs) = do
@@ -176,6 +180,18 @@ normalizationData cd pv = do
         setRangeFromData YAxis Lower Linear
         setLegend True NorthEast Inside
     
+linearRegressionTLS00 :: S.Sample -> S.Sample -> Double
+linearRegressionTLS00 xs ys = beta
+    where
+          sqr zs               = U.sum (U.map (^2) zs) / (n-1)
+          !n                   = fromIntegral $ U.length xs
+          !c                   = U.sum (U.zipWith (*) xs ys) / (n-1)
+          !b                   = (sqr xs - (sqr ys)) / c
+          !m1                  = S.mean xs 
+          !m2                  = S.mean ys
+          !betas               = [(-b - sqrt(b^2+4))/2,(-b + sqrt(b^2+4)) /2]
+          !beta                = if c > 0 then maximum betas else minimum betas
+
 main = do
     original_pa <- parseTSVFromFile pa_filename
     original_outliers <- parseTSVFromFile outliers_filename
